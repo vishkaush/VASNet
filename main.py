@@ -161,7 +161,7 @@ class AONet:
         self.model = VASNet()
         self.model.eval()
         self.model.apply(weights_init)
-        #print(self.model)
+        print(self.model)
 
         cuda_device = cuda_device or self.hps.cuda_device
 
@@ -212,8 +212,10 @@ class AONet:
 
         print("Starting training...")
 
-        max_val_fscore = 0
-        max_val_fscore_epoch = 0
+        max_val_fscore_avg = 0
+        max_val_fscore_avg_epoch = 0
+        max_val_fscore_max = 0
+        max_val_fscore_max_epoch = 0
         train_keys = self.train_keys[:]
 
         lr = self.hps.lr[0]
@@ -252,28 +254,35 @@ class AONet:
                 avg_loss.append([float(loss), float(loss_att)])
 
             # Evaluate test dataset
-            val_fscore, video_scores = self.eval(self.test_keys)
-            if max_val_fscore < val_fscore:
-                max_val_fscore = val_fscore
-                max_val_fscore_epoch = epoch
+            epoch_result_file_path = os.path.join(output_dir, "results_temp", str(epoch) + ".h5")
+            val_fscore_avg, val_fscore_max, video_scores = self.eval(self.test_keys, results_filename=epoch_result_file_path)
+            if max_val_fscore_avg < val_fscore_avg:
+                max_val_fscore_avg = val_fscore_avg
+                max_val_fscore_avg_epoch = epoch
+            if max_val_fscore_max < val_fscore_max:
+                max_val_fscore_max = val_fscore_max
+                max_val_fscore_max_epoch = epoch
+            
 
             avg_loss = np.array(avg_loss)
             print("   Train loss: {0:.05f}".format(np.mean(avg_loss[:, 0])), end='')
-            print('   Test F-score avg/max: {0:0.5}/{1:0.5}'.format(val_fscore, max_val_fscore))
+            print('   Test FAvg-score avg/max: {0:0.5}/{1:0.5}'.format(val_fscore_avg, max_val_fscore_avg))
+            print('   Test FMax-score avg/max: {0:0.5}/{1:0.5}'.format(val_fscore_max, max_val_fscore_max))
 
             if self.verbose:
-                video_scores = [["No", "Video", "F-score"]] + video_scores
+                video_scores = [["No", "Video", "Budget", "F-score(Avg)", "F-Score(Max)"]] + video_scores
                 print_table(video_scores, cell_width=[3,40,8])
 
             # Save model weights
-            path, filename = os.path.split(self.split_file)
-            base_filename, _ = os.path.splitext(filename)
-            path = os.path.join(output_dir, 'models_temp', base_filename+'_'+str(self.split_id))
-            os.makedirs(path, exist_ok=True)
-            filename = str(epoch)+'_'+str(round(val_fscore*100,3))+'.pth.tar'
+            #path, filename = os.path.split(self.split_file)
+            #base_filename, _ = os.path.splitext(filename)
+            #path = os.path.join(output_dir, 'models_temp', base_filename+'_'#+str(self.split_id))
+            #os.makedirs(path, exist_ok=True)
+            path = os.path.join(output_dir, "models_temp")
+            filename = str(epoch)+'_'+str(round(val_fscore_avg*100,3))+'_'+str(round(val_fscore_max*100,3)) + '.pth.tar'
             torch.save(self.model.state_dict(), os.path.join(path, filename))
 
-        return max_val_fscore, max_val_fscore_epoch
+        return max_val_fscore_avg, max_val_fscore_avg_epoch, max_val_fscore_max, max_val_fscore_max_epoch
 
 
     def eval(self, keys, results_filename=None):
@@ -295,20 +304,21 @@ class AONet:
                 summary[key] = y[0].detach().cpu().numpy()
                 att_vecs[key] = att_vec.detach().cpu().numpy()
 
-        f_score, video_scores = self.eval_summary(summary, keys, metric=self.dataset_name,
+        f_score_avg, f_score_max, video_scores = self.eval_summary(summary, keys, 
                     results_filename=results_filename, att_vecs=att_vecs)
 
-        return f_score, video_scores
+        return f_score_avg, f_score_max, video_scores
 
 
-    def eval_summary(self, machine_summary_activations, test_keys, results_filename=None, metric='tvsum', att_vecs=None):
+    def eval_summary(self, machine_summary_activations, test_keys, results_filename=None, att_vecs=None):
 
-        eval_metric = 'avg' if metric == 'tvsum' else 'max'
+        #eval_metric = 'avg' if metric == 'tvsum' else 'max'
 
         if results_filename is not None:
             h5_res = h5py.File(results_filename, 'w')
 
-        fms = []
+        fms_avg = []
+        fms_max = []
         video_scores = []
         for key_idx, key in enumerate(test_keys):
             d = self.get_data(key)
@@ -322,37 +332,51 @@ class AONet:
             nfps = d['n_frame_per_seg'][...].tolist()
             positions = d['picks'][...]
             user_summary = d['user_summary'][...]
+            video_fps = d['video_fps'][()]
 
-            machine_summary = generate_summary(probs, cps, num_frames, nfps, positions)
-            fm, _, _ = evaluate_summary(machine_summary, user_summary, eval_metric)
-            fms.append(fm)
+            budgets = [60, 90, 120, 150, 180]
+            for budget in budgets:
+                machine_summary, selected_segments, segment_scores, frame_scores = generate_summary(probs, cps, num_frames, nfps, positions, budget=budget, fps=video_fps)
 
-            # Reporting & logging
-            video_scores.append([key_idx + 1, key, "{:.1%}".format(fm)])
+                selected_segments = [x + 1 for x in selected_segments]
 
-            if results_filename:
-                gt = d['gtscore'][...]
-                h5_res.create_dataset(key + '/score', data=probs)
-                h5_res.create_dataset(key + '/machine_summary', data=machine_summary)
-                h5_res.create_dataset(key + '/gtscore', data=gt)
-                h5_res.create_dataset(key + '/fm', data=fm)
-                h5_res.create_dataset(key + '/picks', data=positions)
+                fm_avg, fm_max = evaluate_summary(machine_summary, user_summary)
+                fms_avg.append(fm_avg)
+                fms_max.append(fm_max)
 
-                video_name = key.split('/')[1]
-                if 'video_name' in d:
-                    video_name = d['video_name'][...]
-                h5_res.create_dataset(key + '/video_name', data=video_name)
+                # Reporting & logging
+                video_scores.append([key_idx + 1, key, budget, "{:.1%}".format(fm_avg), "{:.1%}".format(fm_max)])
 
-                if att_vecs is not None:
-                    h5_res.create_dataset(key + '/att', data=att_vecs[key])
+                if results_filename:
+                    #gt = d['gtscore'][...]
+                    h5_res.create_dataset(key + '/' + str(budget) + '/score', data=frame_scores)
+                    h5_res.create_dataset(key + '/' + str(budget) + '/machine_summary', data=machine_summary)
+                    h5_res.create_dataset(
+                    key + '/' + str(budget) + '/selected_segments', data=selected_segments)
+                    h5_res.create_dataset(
+                    key + '/' + str(budget) + '/segment_scores', data=segment_scores)
+                    h5_res.create_dataset(key + '/' + str(budget) + '/gtscore', data=d['gtscore'][...])
+                    h5_res.create_dataset(key + '/' + str(budget) + '/fm_avg', data=fm_avg)
+                    h5_res.create_dataset(key + '/' + str(budget) + '/fm_max', data=fm_max)
+                    #h5_res.create_dataset(key + '/picks', data=positions)
 
-        mean_fm = np.mean(fms)
+                    # video_name = key.split('/')[1]
+                    # if 'video_name' in d:
+                    #     video_name = d['video_name'][...]
+                    # h5_res.create_dataset(key + '/video_name', data=video_name)
 
+                    # if att_vecs is not None:
+                    #     h5_res.create_dataset(key + '/att', data=att_vecs[key])
+
+        #mean_fm = np.mean(fms)
+        mean_fm_avg = np.mean(fms_avg)
+        mean_fm_max = np.mean(fms_max)
         # Reporting & logging
         if results_filename is not None:
             h5_res.close()
 
-        return mean_fm, video_scores
+        #return mean_fm, video_scores
+        return mean_fm_avg, mean_fm_max, video_scores
 
 
 #==============================================================================================
@@ -411,7 +435,8 @@ def train(hps):
         if datasets is None:
             datasets = hps.datasets
 
-        f_avg = 0
+        favg_avg = 0
+        fmax_avg = 0
         n_folds = len(splits)
         for split_id in range(n_folds):
             ao = AONet(hps)
@@ -419,29 +444,38 @@ def train(hps):
             ao.load_datasets(datasets=datasets)
             ao.load_split_file(splits_file=split_filename)
             ao.select_split(split_id=split_id)
-
-            fscore, fscore_epoch = ao.train(output_dir=hps.output_dir)
-            f_avg += fscore
+            split_id_outpath = os.path.join(hps.output_dir, str(split_id))
+            if not os.path.exists(split_id_outpath):
+                os.makedirs(split_id_outpath)
+            fscore_avg, fscore_avg_epoch, fscore_max, fscore_max_epoch = ao.train(output_dir=split_id_outpath)
+            favg_avg += fscore_avg
+            fmax_avg += fscore_max
 
             # Log F-score for this split_id
-            f.write(split_filename + ', ' + str(split_id) + ', ' + str(fscore) + ', ' + str(fscore_epoch) + '\n')
+            f.write(split_filename + ', ' + str(split_id) + ', ' + str(fscore_avg) + ', ' + str(fscore_avg_epoch) + ', ' + str(fscore_max) + ', ' + str(fscore_max_epoch) + '\n')
             f.flush()
 
             # Save model with the highest F score
-            _, log_file = os.path.split(split_filename)
-            log_dir, _ = os.path.splitext(log_file)
-            log_dir += '_' + str(split_id)
-            log_file = os.path.join(hps.output_dir, 'models', log_dir) + '_' + str(fscore) + '.tar.pth'
+            #_, log_file = os.path.split(split_filename)
+            #log_dir, _ = os.path.splitext(log_file)
+            #log_dir += '_' + str(split_id)
+            #log_file_avg = os.path.join(split_id_outpath, str(fscore_avg) + '.tar.pth'
+            #log_file_max = os.path.join(hps.output_dir, 'models', log_dir) + '_' + str(fscore_max) + '.tar.pth'
 
-            os.makedirs(os.path.join(hps.output_dir, 'models', ), exist_ok=True)
-            os.system('mv ' + hps.output_dir + '/models_temp/' + log_dir + '/' + str(fscore_epoch) + '_*.pth.tar ' + log_file)
-            os.system('rm -rf ' + hps.output_dir + '/models_temp/' + log_dir)
-
-            print("Split: {0:}   Best F-score: {1:0.5f}   Model: {2:}".format(split_filename, fscore, log_file))
+            #os.makedirs(os.path.join(hps.output_dir, 'models', ), exist_ok=True)
+            os.system('mv ' + split_id_outpath + '/models_temp/' + str(fscore_avg_epoch) + '_*.pth.tar ' + split_id_outpath)
+            if fscore_max_epoch != fscore_avg_epoch:
+                os.system('mv ' + split_id_outpath + '/models_temp/' + str(fscore_max_epoch) + '_*.pth.tar ' + split_id_outpath)
+            #os.system('rm -rf ' + hps.output_dir + '/models_temp/' + log_dir)
+            os.system('cp ' + split_id_outpath + '/results_temp/' + str(fscore_avg_epoch) + '.h5 ' + split_id_outpath + '/favg_best.h5')
+            if fscore_max_epoch != fscore_avg_epoch:
+                os.system('cp ' + split_id_outpath + '/results_temp/' + str(fscore_max_epoch) + '.h5 ' + split_id_outpath + '/fmax_best.h5')
+            print("Split: {0:}   Best FAvg-score: {1:0.5f}   Best FMax-score: {2:0.5f}   ResultAvgBest: {3:}   ResultMaxBest: {4:}".format(str(split_id), fscore_avg, fscore_max, split_id_outpath + '/favg_best.h5', split_id_outpath + '/fmax_best.h5'))
 
         # Write average F-score for all splits to the results.txt file
-        f_avg /= n_folds
-        f.write(split_filename + ', ' + str('avg') + ', ' + str(f_avg) + '\n')
+        favg_avg /= n_folds
+        fmax_avg /= n_folds
+        f.write(str(split_id) + ', ' + str('avg') + ', ' + str(favg_avg) + ', ' + str('max') + ', ' + str(fmax_avg) + '\n')
         f.flush()
 
     f.close()
@@ -455,6 +489,8 @@ if __name__ == "__main__":
     parser.add_argument('-d', '--datasets', type=str, help="Path to a comma separated list of h5 datasets")
     parser.add_argument('-s', '--splits', type=str, help="Comma separated list of split files.")
     parser.add_argument('-t', '--train', action='store_true', help="Train")
+    parser.add_argument('-c', '--cuda-device', type=int, help="GPU id")
+    parser.add_argument('-e', '--epochs-max', type=int, help="Max no. of epochs")
     parser.add_argument('-v', '--verbose', action='store_true', help="Prints out more messages")
     parser.add_argument('-o', '--output-dir', type=str, default='data', help="Experiment name")
     args = parser.parse_args()

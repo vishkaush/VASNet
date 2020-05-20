@@ -20,7 +20,7 @@ from knapsack import knapsack_ortools
 import math
 
 
-def generate_summary(ypred, cps, n_frames, nfps, positions, proportion=0.15, method='knapsack'):
+def generate_summary(ypred, cps, n_frames, nfps, positions, proportion=0.15, method='knapsack', budget, fps):
     """Generate keyshot-based video summary i.e. a binary vector.
     Args:
     ---------------------------------------------
@@ -51,7 +51,8 @@ def generate_summary(ypred, cps, n_frames, nfps, positions, proportion=0.15, met
         scores = frame_scores[start:end]
         seg_score.append(float(scores.mean()))
 
-    limits = int(math.floor(n_frames * proportion))
+    #limits = int(math.floor(n_frames * proportion))
+    limits = int(math.floor(budget * fps))
 
     if method == 'knapsack':
         #picks = knapsack_dp(seg_score, nfps, n_segs, limits)
@@ -77,7 +78,7 @@ def generate_summary(ypred, cps, n_frames, nfps, positions, proportion=0.15, met
         summary = np.concatenate((summary, tmp))
 
     summary = np.delete(summary, 0) # delete the first element
-    return summary
+    return summary, picks, seg_score, frame_scores
 
 
 def evaluate_summary(machine_summary, user_summary, eval_metric='avg'):
@@ -120,17 +121,19 @@ def evaluate_summary(machine_summary, user_summary, eval_metric='avg'):
         prec_arr.append(precision)
         rec_arr.append(recall)
 
-    if eval_metric == 'avg':
-        final_f_score = np.mean(f_scores)
-        final_prec = np.mean(prec_arr)
-        final_rec = np.mean(rec_arr)
-    elif eval_metric == 'max':
-        final_f_score = np.max(f_scores)
-        max_idx = np.argmax(f_scores)
-        final_prec = prec_arr[max_idx]
-        final_rec = rec_arr[max_idx]
+    #if eval_metric == 'avg':
+    final_f_score_avg = np.mean(f_scores)
+    #final_prec = np.mean(prec_arr)
+    #final_rec = np.mean(rec_arr)
+    #elif eval_metric == 'max':
+    final_f_score_max = np.max(f_scores)
+    #max_idx = np.argmax(f_scores)
+    #final_prec = prec_arr[max_idx]
+    #final_rec = rec_arr[max_idx]
     
-    return final_f_score, final_prec, final_rec
+    #return final_f_score, final_prec, final_rec
+    return final_f_score_avg, final_f_score_max
+    
 
 
 def evaluate_user_summaries(user_summary, eval_metric='avg'):
