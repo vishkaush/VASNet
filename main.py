@@ -415,11 +415,11 @@ def eval_split(hps, splits_filename, data_dir='test'):
 
 def train(hps):
     os.makedirs(hps.output_dir, exist_ok=True)
-    os.makedirs(os.path.join(hps.output_dir, 'splits'), exist_ok=True)
-    os.makedirs(os.path.join(hps.output_dir, 'code'), exist_ok=True)
-    os.makedirs(os.path.join(hps.output_dir, 'models'), exist_ok=True)
-    os.system('cp -f splits/*.json  ' + hps.output_dir + '/splits/')
-    os.system('cp *.py ' + hps.output_dir + '/code/')
+    #os.makedirs(os.path.join(hps.output_dir, 'splits'), exist_ok=True)
+    #os.makedirs(os.path.join(hps.output_dir, 'code'), exist_ok=True)
+    #os.makedirs(os.path.join(hps.output_dir, 'models'), exist_ok=True)
+    #os.system('cp -f splits/*.json  ' + hps.output_dir + '/splits/')
+    #os.system('cp *.py ' + hps.output_dir + '/code/')
 
     # Create a file to collect results from all splits
     f = open(hps.output_dir + '/results.txt', 'wt')
@@ -495,6 +495,7 @@ if __name__ == "__main__":
     parser.add_argument('-e', '--epochs-max', type=int, help="Max no. of epochs")
     parser.add_argument('-v', '--verbose', action='store_true', help="Prints out more messages")
     parser.add_argument('-o', '--output-dir', type=str, default='data', help="Experiment name")
+    #parser.add_argument('-m', '--domain', type=str, default='data', help="Experiment name")
     args = parser.parse_args()
 
     # MAIN
