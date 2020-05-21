@@ -65,13 +65,13 @@ class SelfAttention(nn.Module):
 
 class VASNet(nn.Module):
 
-    def __init__(self):
+    def __init__(self, apperture = -1):
         super(VASNet, self).__init__()
 
         self.m = 1024 # cnn features size
         self.hidden_size = 1024
 
-        self.att = SelfAttention(input_size=self.m, output_size=self.m)
+        self.att = SelfAttention(apperture=apperture, input_size=self.m, output_size=self.m)
         self.ka = nn.Linear(in_features=self.m, out_features=1024)
         self.kb = nn.Linear(in_features=self.ka.out_features, out_features=1024)
         self.kc = nn.Linear(in_features=self.kb.out_features, out_features=1024)

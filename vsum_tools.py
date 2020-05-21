@@ -78,6 +78,9 @@ def generate_summary(ypred, cps, n_frames, nfps, positions, proportion=0.15, met
         summary = np.concatenate((summary, tmp))
 
     summary = np.delete(summary, 0) # delete the first element
+    if n_frames > len(summary):
+        tmp = np.zeros((n_frames - len(summary)), dtype=np.float32)
+        summary = np.concatenate((summary, tmp))
     return summary, picks, seg_score, frame_scores
 
 

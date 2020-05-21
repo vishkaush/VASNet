@@ -158,7 +158,7 @@ class AONet:
         np.random.seed(rnd_seed)
         torch.manual_seed(rnd_seed)
 
-        self.model = VASNet()
+        self.model = VASNet(apperture=self.hps.apperture)
         self.model.eval()
         self.model.apply(weights_init)
         print(self.model)
@@ -489,7 +489,9 @@ if __name__ == "__main__":
     parser.add_argument('-d', '--datasets', type=str, help="Path to a comma separated list of h5 datasets")
     parser.add_argument('-s', '--splits', type=str, help="Comma separated list of split files.")
     parser.add_argument('-t', '--train', action='store_true', help="Train")
+    parser.add_argument('-w', '--window', type=int, help="Window in seconds for local attention, -1 for global attention")
     parser.add_argument('-c', '--cuda-device', type=int, help="GPU id")
+    parser.add_argument('-p', '--subsampling', type=int, help="Subsampling used for this dataset")
     parser.add_argument('-e', '--epochs-max', type=int, help="Max no. of epochs")
     parser.add_argument('-v', '--verbose', action='store_true', help="Prints out more messages")
     parser.add_argument('-o', '--output-dir', type=str, default='data', help="Experiment name")

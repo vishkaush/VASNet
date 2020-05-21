@@ -6,7 +6,7 @@ __date__ = "1/12/2018"
 __license__= "MIT License"
 
 from torch.autograd import Variable
-
+import math
 
 class HParameters:
 
@@ -15,6 +15,9 @@ class HParameters:
         self.use_cuda = True
         self.cuda_device = 0
         self.max_summary_length = 0.15
+        self.window = -1
+        self.apperture = -1
+        self.subsampling = 1
 
         self.l2_req = 0.00001
         self.lr_epochs = [0]
@@ -54,6 +57,9 @@ class HParameters:
                     val = val.split()
 
                 setattr(self, key, val)
+        if self.window > 0:
+            self.apperture = math.ceil(5.0 / self.subsampling) * self.window
+        print("Aperture at scale of picks = ", self.apperture)
 
     def __str__(self):
         vars = [attr for attr in dir(self) if not callable(getattr(self,attr)) and not (attr.startswith("__") or attr.startswith("_"))]
